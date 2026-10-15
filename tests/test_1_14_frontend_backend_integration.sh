@@ -99,25 +99,6 @@ check_copy_target() {
 check_copy_target "$FRONTEND_DOCKERFILE" "package.json" "1_14/Dockerfile.frontend"
 check_copy_target "$BACKEND_DOCKERFILE" "go.mod" "1_14/Dockerfile.backend"
 
-grep -qE '^\s*ENV\s+REACT_APP_BACKEND_URL' "$FRONTEND_DOCKERFILE" \
-  || fail "1_14/Dockerfile.frontend has no ENV REACT_APP_BACKEND_URL (needed at build time, per the frontend README)"
-pass "1_14/Dockerfile.frontend sets ENV REACT_APP_BACKEND_URL"
-
-# Create React App bakes REACT_APP_* vars into the bundle at build time --
-# the ENV must appear before "RUN npm run build", or it has no effect on
-# the built app.
-env_line="$(grep -nE '^\s*ENV\s+REACT_APP_BACKEND_URL' "$FRONTEND_DOCKERFILE" | head -1 | cut -d: -f1)"
-build_line="$(grep -nE '^\s*RUN\s+npm\s+run\s+build' "$FRONTEND_DOCKERFILE" | head -1 | cut -d: -f1)"
-if [ -n "$build_line" ]; then
-  [ -n "$env_line" ] && [ "$env_line" -lt "$build_line" ] \
-    || fail "1_14/Dockerfile.frontend sets ENV REACT_APP_BACKEND_URL after \"RUN npm run build\" -- Create React App only bakes REACT_APP_* vars in at build time, so the ENV must come before the build"
-fi
-pass "1_14/Dockerfile.frontend sets ENV REACT_APP_BACKEND_URL before the build"
-
-grep -qE '^\s*ENV\s+REQUEST_ORIGIN' "$BACKEND_DOCKERFILE" \
-  || fail "1_14/Dockerfile.backend has no ENV REQUEST_ORIGIN (needed for the CORS check, per the backend README)"
-pass "1_14/Dockerfile.backend sets ENV REQUEST_ORIGIN"
-
 grep -qE 'docker\s+build' "$COMMANDS_FILE" \
   || fail "1_14/commands does not contain a docker build command"
 grep -qE 'docker\s+run' "$COMMANDS_FILE" \
@@ -155,6 +136,11 @@ FRONTEND_BUILD_IMAGE=""
 BACKEND_BUILD_IMAGE=""
 FRONTEND_CONTEXT=""
 BACKEND_CONTEXT=""
+# Any --build-arg given in 1_14/commands is passed through to the test's own
+# build, so the values may be supplied there instead of hardcoded in the
+# Dockerfile (e.g. "ARG REACT_APP_BACKEND_URL" + "--build-arg ...").
+FRONTEND_BUILD_ARGS=()
+BACKEND_BUILD_ARGS=()
 for line in "${BUILD_LINES[@]}"; do
   file_arg="$(echo "$line" | grep -oE '(-f|--file)[[:space:]=]+[^[:space:]]+' | head -1 | sed -E 's/^(-f|--file)[[:space:]=]+//')"
   [ -n "$file_arg" ] || continue
@@ -167,12 +153,19 @@ for line in "${BUILD_LINES[@]}"; do
   resolved_ctx="$(resolve_context "$raw_ctx" || true)"
   [ -n "$resolved_ctx" ] || continue
 
+  build_args=()
+  while IFS= read -r arg; do
+    [ -n "$arg" ] && build_args+=(--build-arg "$arg")
+  done < <(echo "$line" | grep -oE -- '--build-arg[[:space:]=]+[^[:space:]]+' | sed -E 's/^--build-arg[[:space:]=]+//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/')
+
   if [ "$role" = "Dockerfile.frontend" ]; then
     FRONTEND_BUILD_IMAGE="$img"
     FRONTEND_CONTEXT="$resolved_ctx"
+    FRONTEND_BUILD_ARGS=(${build_args[@]+"${build_args[@]}"})
   elif [ "$role" = "Dockerfile.backend" ]; then
     BACKEND_BUILD_IMAGE="$img"
     BACKEND_CONTEXT="$resolved_ctx"
+    BACKEND_BUILD_ARGS=(${build_args[@]+"${build_args[@]}"})
   fi
 done
 
@@ -211,6 +204,10 @@ FRONTEND_PORT=""
 BACKEND_PORT=""
 FRONTEND_RUN_CONTAINER_PORT=""
 BACKEND_RUN_CONTAINER_PORT=""
+# Likewise any -e/--env given to a docker run line is passed through to the
+# test's own run of that image.
+FRONTEND_RUN_ENVS=()
+BACKEND_RUN_ENVS=()
 for line in "${RUN_LINES[@]}"; do
   run_parsed="$(docker_run_parse "$line")"
   run_img="$(echo "$run_parsed" | cut -f1)"
@@ -221,12 +218,18 @@ for line in "${RUN_LINES[@]}"; do
   else
     run_container_port="$run_host_port"
   fi
+  run_envs=()
+  while IFS= read -r env; do
+    [ -n "$env" ] && run_envs+=(-e "$env")
+  done < <(docker_run_env_flags "$line")
   if [ "$run_img" = "$FRONTEND_BUILD_IMAGE" ]; then
     FRONTEND_PORT="$run_host_port"
     FRONTEND_RUN_CONTAINER_PORT="$run_container_port"
+    FRONTEND_RUN_ENVS=(${run_envs[@]+"${run_envs[@]}"})
   elif [ "$run_img" = "$BACKEND_BUILD_IMAGE" ]; then
     BACKEND_PORT="$run_host_port"
     BACKEND_RUN_CONTAINER_PORT="$run_container_port"
+    BACKEND_RUN_ENVS=(${run_envs[@]+"${run_envs[@]}"})
   fi
 done
 [ -n "$FRONTEND_PORT" ] || fail "could not find a docker run command starting image \"$FRONTEND_BUILD_IMAGE\" and publishing a port with -p/--publish before it"
@@ -243,18 +246,39 @@ pass "frontend publishes host port $FRONTEND_PORT, backend publishes host port $
   || fail "1_14/commands' backend docker run publishes container port $BACKEND_RUN_CONTAINER_PORT, but 1_14/Dockerfile.backend actually listens on port $BACKEND_APP_PORT -- the -p mapping's container side (the part after the colon) must match"
 pass "docker run container ports match what each app actually listens on"
 
+# REACT_APP_BACKEND_URL may be set either as a plain ENV, or as an ARG
+# filled in by --build-arg in 1_14/commands. Either way it must be declared
+# before "RUN npm run build" -- Create React App only bakes REACT_APP_* vars
+# in at build time.
+env_line="$(grep -nE '^\s*(ENV|ARG)\s+REACT_APP_BACKEND_URL' "$FRONTEND_DOCKERFILE" | head -1 | cut -d: -f1)"
+[ -n "$env_line" ] \
+  || fail "1_14/Dockerfile.frontend has no ENV (or ARG) REACT_APP_BACKEND_URL (needed at build time, per the frontend README)"
+build_line="$(grep -nE '^\s*RUN\s+npm\s+run\s+build' "$FRONTEND_DOCKERFILE" | head -1 | cut -d: -f1)"
+if [ -n "$build_line" ]; then
+  [ "$env_line" -lt "$build_line" ] \
+    || fail "1_14/Dockerfile.frontend sets REACT_APP_BACKEND_URL after \"RUN npm run build\" -- Create React App only bakes REACT_APP_* vars in at build time, so it must come before the build"
+fi
+pass "1_14/Dockerfile.frontend sets REACT_APP_BACKEND_URL before the build"
+
+# REQUEST_ORIGIN may be set either as ENV in the Dockerfile or with -e on
+# the backend's docker run line.
+grep -qE '^\s*ENV\s+REQUEST_ORIGIN' "$BACKEND_DOCKERFILE" \
+  || printf '%s\n' ${BACKEND_RUN_ENVS[@]+"${BACKEND_RUN_ENVS[@]}"} | grep -qE '^REQUEST_ORIGIN(=|$)' \
+  || fail "REQUEST_ORIGIN is set neither by ENV in 1_14/Dockerfile.backend nor by -e in the backend's docker run (needed for the CORS check, per the backend README)"
+pass "REQUEST_ORIGIN is set for the backend"
+
 echo "Building both images -- this involves an npm build and a go build, and may take a while..."
-docker build -t "$FRONTEND_BUILD_IMAGE" -f "$FRONTEND_DOCKERFILE" "$FRONTEND_CONTEXT" >/dev/null 2>&1 \
+docker build ${FRONTEND_BUILD_ARGS[@]+"${FRONTEND_BUILD_ARGS[@]}"} -t "$FRONTEND_BUILD_IMAGE" -f "$FRONTEND_DOCKERFILE" "$FRONTEND_CONTEXT" >/dev/null 2>&1 \
   || fail "docker build failed for 1_14/Dockerfile.frontend with context $FRONTEND_CONTEXT"
 pass "$FRONTEND_BUILD_IMAGE image builds"
 
-docker build -t "$BACKEND_BUILD_IMAGE" -f "$BACKEND_DOCKERFILE" "$BACKEND_CONTEXT" >/dev/null 2>&1 \
+docker build ${BACKEND_BUILD_ARGS[@]+"${BACKEND_BUILD_ARGS[@]}"} -t "$BACKEND_BUILD_IMAGE" -f "$BACKEND_DOCKERFILE" "$BACKEND_CONTEXT" >/dev/null 2>&1 \
   || fail "docker build failed for 1_14/Dockerfile.backend with context $BACKEND_CONTEXT"
 pass "$BACKEND_BUILD_IMAGE image builds"
 
-docker run -d --name "$BACKEND_CONTAINER" -p "$BACKEND_PORT:$BACKEND_APP_PORT" "$BACKEND_BUILD_IMAGE" >/dev/null 2>&1 \
+docker run -d --name "$BACKEND_CONTAINER" ${BACKEND_RUN_ENVS[@]+"${BACKEND_RUN_ENVS[@]}"} -p "$BACKEND_PORT:$BACKEND_APP_PORT" "$BACKEND_BUILD_IMAGE" >/dev/null 2>&1 \
   || fail "docker run failed for the backend, publishing port $BACKEND_PORT"
-docker run -d --name "$FRONTEND_CONTAINER" -p "$FRONTEND_PORT:$FRONTEND_APP_PORT" "$FRONTEND_BUILD_IMAGE" >/dev/null 2>&1 \
+docker run -d --name "$FRONTEND_CONTAINER" ${FRONTEND_RUN_ENVS[@]+"${FRONTEND_RUN_ENVS[@]}"} -p "$FRONTEND_PORT:$FRONTEND_APP_PORT" "$FRONTEND_BUILD_IMAGE" >/dev/null 2>&1 \
   || fail "docker run failed for the frontend, publishing port $FRONTEND_PORT"
 pass "both containers started"
 
