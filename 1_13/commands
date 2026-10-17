@@ -1,0 +1,9 @@
+# DevOps with Docker, Fall 2026
+# offer by The University of Helsinki
+# Chapter 2/utilizing-tools-from-the-registry
+# url: https://courses.mooc.fi/org/uh-cs/courses/devops-with-docker-fall-2026/chapter-2/utilizing-tools-from-the-registry
+# Exercise 1.13. Hello backend
+# created at Oct 17, 2026 22:24 HKT
+
+docker build -t golang .
+docker run -p 8080:8080 golang
