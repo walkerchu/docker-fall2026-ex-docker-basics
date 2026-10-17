@@ -1,0 +1,10 @@
+# DevOps with Docker, Fall 2026
+# offer by The University of Helsinki
+# chapter 2/interacting-with-the-container-via-volumes-and-ports
+# url: https://courses.mooc.fi/org/uh-cs/courses/devops-with-docker-fall-2026/chapter-2/interacting-with-the-container-via-volumes-and-ports
+# Exercise 1.10. Ports open (mandatory exercise)
+# created at Oct 17, 2026 12:45 HKT
+
+docker run -p 8080:8080 web-server
+
+
