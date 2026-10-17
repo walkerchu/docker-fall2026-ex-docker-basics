@@ -1,0 +1,8 @@
+# DevOps with Docker, Fall 2026
+# offer by The University of Helsinki
+# chapter 2/interacting-with-the-container-via-volumes-and-ports
+# url: https://courses.mooc.fi/org/uh-cs/courses/devops-with-docker-fall-2026/chapter-2/interacting-with-the-container-via-volumes-and-ports
+# Exercise 1.9. Volumes (mandatory exercise)
+# created at Oct 17, 2026 03:45 HKT
+
+docker run -d --name logger -v "$(pwd)/service.log:/usr/src/app/text.log" devopsdockeruh/simple-web-service
