@@ -1,0 +1,37 @@
+Running application:
+
+https://random-num-api.onrender.com/
+
+API endpoint:
+
+https://random-num-api.onrender.com/random
+
+Brief discussion
+
+A simple REST API is created by using FastAPI and containerized it with Docker.
+
+Steps completed:
+
+1. Developed a Random Number API with FastAPI.
+2. Created a Dockerfile based on the python:3.11-slim image.
+3. Built the Docker image locally using Docker.
+4. Created a public repository on Docker Hub: walkerchu/random-num-api
+5. Tagged and pushed the Docker image to Docker Hub.
+6. Deployed the image from Docker Hub to Render as a Web Service.
+7. Verified that the service is publicly accessible through a Render URL.
+
+The API provides a random number through the /random endpoint. After deployment, a response message is added to the root URL (/) so users can understand the purpose of the service when visiting the homepage.
+
+This exercise demonstrated the complete workflow from application development, containerization, image publishing, and cloud deployment using Docker Hub and Render. It also helped me understand how Docker images can be used to deploy applications consistently across different environments.
+
+Technologies used:
+
+- Python
+- FastAPI
+- Docker
+- Docker Hub
+- Render
+
+This project successfully exposes a public API running from a Docker container deployed in the cloud.
+
+Date : Oct 19, 2026
