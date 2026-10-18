@@ -1,9 +1,1 @@
-# DevOps with Docker, Fall 2026
-# offer by The University of Helsinki
-# Chapter 2/utilizing-tools-from-the-registry
-# Exercise 1.15. Homework
-# created at Oct 18, 2026 22:24 HKT
-
-# Docker Hub username/repository :
-
-https://hub.docker.com/repository/docker/walkerchu/random-num-api
+walkerchu/random-num-api
