@@ -1,0 +1,13 @@
+# DevOps with Docker, Fall 2026
+# offer by The University of Helsinki
+# Chapter 2/utilizing-tools-from-the-registry
+# url: https://courses.mooc.fi/org/uh-cs/courses/devops-with-docker-fall-2026/chapter-2/utilizing-tools-from-the-registry
+# Exercise 1.14. Environment
+# created at Oct 18, 2026 01:42 HKT
+
+
+docker network create --driver bridge shared-network
+docker build -t frontend-1-14 -f Dockerfile.frontend ..
+docker build -t backend-1-14 -f Dockerfile.backend ..
+docker run --network shared-network -p 8080:8080 --name backend backend-1-14
+docker run --network shared-network -p 5001:5001 --name frontend frontend-1-14

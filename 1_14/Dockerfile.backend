@@ -1,1 +1,27 @@
+# DevOps with Docker, Fall 2026
+# offer by The University of Helsinki
+# Chapter 2/utilizing-tools-from-the-registry
+# url: https://courses.mooc.fi/org/uh-cs/courses/devops-with-docker-fall-2026/chapter-2/utilizing-tools-from-the-registry
+# Exercise 1.14. Environment
+# created at Oct 18, 2026 01:41 HKT
+
+
+FROM golang:1.27
+
+WORKDIR /app
+
 # use here COPY 1_13 .
+COPY 1_13 .
+RUN go mod download
+
+RUN go build -o server .
+
+RUN go test ./...
+
+# to pass an url through the cors check 
+# (see README.md of exercise 3.13)
+ENV REQUEST_ORIGIN=http://localhost:5001
+
+EXPOSE 8080
+
+CMD ["./server"]
